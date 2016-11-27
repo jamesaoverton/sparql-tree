@@ -13,18 +13,15 @@
    {:subject "a" :parent "" :label "A"}])
 
 (def example-data
-  '(({:subject "a", :parent "", :label "A"}
-      ({:subject "b", :parent "a", :label "B"}
-        ({:subject "c", :parent "b", :label "C"}
-          ({:subject "d", :parent "c", :label "D"})
-          ({:subject "e", :parent "c", :label "E"})))
-      ({:subject "f", :parent "a", :label "F"}
-        ({:subject "c", :parent "f", :label "C"}
-          ({:subject "d", :parent "c", :label "D"})
-          ({:subject "e", :parent "c", :label "E"}))))))
+  {"a" {:children '("b" "f") :label "A"}
+   "b" {:label "B" :parents '("a") :children '("c")}
+   "c" {:children '("d" "e") :label "C" :parents '("b" "f")}
+   "d" {:label "D" :parents '("c")}
+   "e" {:label "E" :parents '("c")}
+   "f" {:children '("c") :label "F" :parents '("a")}})
 
 (deftest test-rows->tree
-  (is (= example-data (rows->tree example-rows))))
+  (is (= example-data (rows->node-map example-rows))))
 
 (def text-output "- A
 -- B
@@ -48,7 +45,8 @@
 9,e,7,E,,1:6:7:9
 ")
 
-(def json-output "[
+(def json-output
+  (json/read-str "[
  {\"text\": \"A\",
   \"iri\": \"a\",
   \"children\": [
@@ -78,13 +76,14 @@
   ]}
  ]}
 ]
-")
+"))
 
 (deftest test-write-tree
   (testing "JSON output"
-    (is (= (json/read-str json-output)
-           (json/read-str (csv->tree "test-file.csv" :json [:subject :parent :label])))))
+    (is (= json-output
+           (json/read-str (csv->tree "resources/test-file.csv" :json [:subject :parent :label])))))
   (testing "Table output"
-    (is (= 1 2)))
+    (is (= csv-output
+           (csv->tree "resources/test-file.csv" :table [:subject :parent :label]))))
   (testing "Text output"
     (is (= 1 2))))
