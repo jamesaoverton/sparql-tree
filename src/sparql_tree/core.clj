@@ -29,14 +29,14 @@
 
 (defn rows->tree
   "Recursively builds a tree given a table of parent-children relationships."
-  ([rows [car & cdr :as elements]]
+  ([rows [car & cdr]]
    (let [children-car (children rows (:subject car))]
      (cons
        (cons car
              (when (not-empty children-car)
                (rows->tree rows children-car)))
        (when (not-empty cdr)
-         (rows->tree rows (seq cdr))))))
+         (rows->tree rows cdr)))))
   ([rows]
    (rows->tree rows (filter (comp s/blank? :parent) rows))))
 
@@ -56,8 +56,8 @@
   [idx subject (or (first parents) 0) label "" (s/join ":" (reverse (conj parents idx)))])
 
 (defn- update-parents
-  [parent idx child]
-  (cons (assoc (first child) :parents (conj (:parents parent) idx)) (rest child)))
+  [{p :parents} idx [child & others]]
+  (cons (assoc child :parents (conj p idx)) others))
 
 (defn- tree->table
   "Returns a tree table, used for IEDB Finders."
