@@ -1,28 +1,49 @@
 (ns sparql-tree.core
-  (:require [clojure.string :as s]
-            [clojure.java.io :as io]
-            [clojure.data.csv :as csv]
-            [clojure.data.json :as json])
-  (:import [java.io StringWriter]))
+  (:require
+    [clojure.string :as s]
+    #?(:clj  [clojure.java.io :as io])
+    #?(:clj  [clojure.data.csv :as csv]
+       :cljs [testdouble.cljs.csv :as csv])
+    #?(:clj  [clojure.data.json :as json]))
+  #?(:clj
+     (:import [java.io StringWriter])))
 
+;; CSV/DELIMITTED MANAGEMENT
 (defn- read-csv
   "Parses a CSV given its filename. Once parsed, zipmaps through each row using
    headers that are passed through."
-  [headers filename]
+  [raw-data? headers data]
   (map (fn [row]
          (zipmap headers row))
-       (with-open [in-file (io/reader filename)]
-         (doall
-           (csv/read-csv in-file)))))
+       #?(:clj  (if raw-data?
+                  (csv/read-csv data)
+                  (with-open [in-file (io/reader data)]
+                    (doall
+                      (csv/read-csv in-file))))
+          :cljs (map #(s/split % #",")
+                     (s/split data #"\n")))))
 
 (defn- delimitted-string-writer
   "Writes a table to a delimmted string. String is delimitted by a custom separator."
   [table separator]
-  (let [writer (StringWriter.)]
-    (csv/write-csv writer table :separator separator)
-    (str writer)))
+  #?(:clj  (let [writer (StringWriter.)]
+             (csv/write-csv writer table :separator separator)
+             (str writer))
+     :cljs (str (csv/write-csv table :separator separator) "\n")))
 
-(defn children
+;; JSON MANAGEMENT (CLJS)
+#?(:cljs
+   (defn clj->json
+     [data]
+     (.stringify js/JSON (clj->js data))))
+
+#?(:cljs
+   (defn json->clj
+     [data]
+     (js->clj (.parse js/JSON data))))
+
+;; TREE BUILDER
+(defn- children
   "Returns children of a given subject."
   [rows subject]
   (filter #(= subject (:parent %)) rows))
@@ -40,15 +61,29 @@
   ([rows]
    (rows->tree rows (filter (comp s/blank? :parent) rows))))
 
+;; TREE WRITER
 (defmulti write-tree
           "Given a conversion format, takes a clojure tree of sparql data,
            converts it to the specified format"
           (fn [format _] format))
 
-;; TODO
+(declare tree->text)
+
+(defn- text-node
+  [prefix [node & others]]
+  (str prefix " " (:label node)
+       (when (not-empty others)
+         (str "\n" (tree->text (str prefix "-") others)))))
+
+(defn- tree->text
+  [prefix tree]
+  (s/join "\n"
+          (reduce (fn [out root]
+                    (conj out (text-node prefix root))) [] tree)))
+
 (defmethod write-tree :text
   [_ tree]
-  )
+  (tree->text "-" tree))
 
 (defn- table-entry
   "Creates a single table entry. Takes the current index and the item for the entry."
@@ -93,14 +128,21 @@
 
 (defmethod write-tree :json
   [_ tree]
-  (json/write-str (reduce tree->map-tree [] tree)))
+  (->> tree
+       (reduce tree->map-tree [])
+       #?(:clj json/write-str
+          :cljs clj->json)))
 
 (defn csv->tree
-  "Given a csv-file, mode of conversion, and headers for said csv, reads and converts
+  "Given a csv or a csv file, mode of conversion, and headers for said csv, reads and converts
    a csv file into one of four possible modes: :text, :csv, :tsv, :json. Headers ought to
-   contain :parent, :subject, and :label keys, but are open to be modified if needed."
-  [in-file out-mode headers]
-  (->> in-file
-       (read-csv headers)
-       rows->tree
-       (write-tree out-mode)))
+   contain :parent, :subject, and :label keys, but are open to be modified if needed. In
+   clojurescript it will always assume the in-file is a raw csv string, but in clojure
+   you can specify whether you are working with a file or raw-data."
+  ([in-file out-mode headers raw-data?]
+   (->> in-file
+        (read-csv raw-data? headers)
+        rows->tree
+        (write-tree out-mode)))
+  ([in-file out-mode headers]
+   (csv->tree in-file out-mode headers false)))

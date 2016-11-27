@@ -1,7 +1,17 @@
 (ns sparql-tree.core-test
-  (:require [clojure.test :refer :all]
-            [sparql-tree.core :refer :all]
-            [clojure.data.json :as json]))
+  (:require
+    [sparql-tree.core :refer [rows->tree csv->tree]]
+    #?(:cljs [sparql-tree.core :refer [json->clj]])
+    #?(:clj  [clojure.test :refer :all]
+       :cljs [cljs.test :refer-macros [deftest is testing]])
+    #?(:clj [clojure.data.json :as json])))
+
+(def raw-csv
+  "d,c,D\nb,a,B\nc,f,C\nf,a,F\nc,b,C\ne,c,E\na,,A\n")
+
+(def data
+  #?(:clj  "resources/test-file.csv"
+     :cljs raw-csv))
 
 (def example-rows
   [{:subject "d" :parent "c" :label "D"}
@@ -34,8 +44,7 @@
 -- F
 --- C
 ---- D
----- E
-")
+---- E")
 
 (def csv-output "1,a,0,A,,1
 2,b,1,B,,1:2
@@ -49,7 +58,7 @@
 ")
 
 (def json-output
-  (json/read-str "[
+  "[
  {\"text\": \"A\",
   \"iri\": \"a\",
   \"children\": [
@@ -79,15 +88,15 @@
   ]}
  ]}
 ]
-"))
+")
 
 (deftest test-write-tree
   (testing "JSON output"
-    (is (= json-output
-           (json/read-str (csv->tree "resources/test-file.csv" :json [:subject :parent :label])))))
+    (is (= (#?(:clj json/read-str :cljs json->clj) json-output)
+           (#?(:clj json/read-str :cljs json->clj) (csv->tree data :json [:subject :parent :label])))))
   (testing "Table output"
     (is (= csv-output
-           (csv->tree "resources/test-file.csv" :csv [:subject :parent :label]))))
+           (csv->tree data :csv [:subject :parent :label]))))
   (testing "Text output"
     (is (= text-output
-           (csv->tree "resources/test-file.csv" :text [:subject :parent :label])))))
+           (csv->tree data :text [:subject :parent :label])))))
